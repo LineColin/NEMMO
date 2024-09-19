@@ -76,6 +76,7 @@ class PhysicalBody:
             self.r_core = self.r_flottability
         else:
             self.H_LMO = self.initial_heat_production * self.rho
+            self.r_flottability = self.r_core
 
         
     def rayleigh(self, dT: float, d: float, mu: float, K: float) -> float:
