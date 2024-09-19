@@ -57,5 +57,5 @@ ax.plot(time, r_crust, 'k-') #in km
 ax.plot(time, r_cumul, 'k-') #in km
 ax.set_xlabel("time [myr]")
 ax.set_ylabel("radius [km]")
-fig.savefig(save_name + ".pdf", trannsparent=True)
+fig.savefig(save_name + ".pdf", transparent=True)
 
