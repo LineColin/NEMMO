@@ -198,6 +198,7 @@ class Stage2Analysis(PhysicalBody):
         
     def initialisation(self, time_step=1e6):
         
+        print("start stage#1")
         self.stage1.run_stage1_analysis(time_step)
         
         self.t = self.stage1.get_time_history()[-1]
@@ -205,11 +206,12 @@ class Stage2Analysis(PhysicalBody):
         self.crust.dr_dt = self.crust.dr/t0
         self.t += t0
         self.t0 = self.t
-        print(f"time stage 1: {self.t/3.15e7} years")
+        print(f"time stage#1: {self.t/3.15e7} years")
         self.crust.Ts = self.stage1.get_Ts_history()[-1]
         self.core.T = self.stage1.get_T_history()[0]
         self.solid.r = self.stage1.get_r_history()[-1]
-        print(f"radius stage 1: {self.solid.r/1000} km")
+        print(f"radius stage#1: {self.solid.r/1000} km")
+        print("end stage#1")
         
         dV_crust = 4 * np.pi * (self.r_body**3 - self.crust.r**3)/3
         dV_solid = (1 - self.ce) * dV_crust / self.ce
@@ -305,9 +307,10 @@ class Stage2Analysis(PhysicalBody):
         
     def run_stage2_analysis(self):
         
-        print("start stage 2")
+        print("start analysis")
         debut = time.time()
         self.initialisation()
+        print("start stage#2")
 
         if self.overturn ==True:
             reset = False
@@ -500,9 +503,9 @@ class Stage2Analysis(PhysicalBody):
         self.r_solid_history.append(r_min_crust)
         self.r_crust_history.append(r_min_crust)
         self.t_history.append(self.t)
-        print((time.time() - debut)/60, "min")
-        print(f"final thickness: {(self.r_body - self.crust.r)/1000} km")
-        print(f"final time: {self.t/3.15e13} Myr" )
+        print(f"final thickness: {(self.r_body - self.crust.r)/1000:.2f} km")
+        print(f"final time: {self.t/3.15e13:.2f} Myr" )
+        print(f"end analysis, computation time: {(time.time() - debut)/60:.2f} min")
 
         
     def get_name(self):
