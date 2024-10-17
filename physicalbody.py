@@ -168,7 +168,7 @@ class Cumulates(PhysicalBody):
         c = y[0]
         R = y[1]
         H = self.h_lmo * self.V * np.exp(- self.HEAT_DECAY * t / 3.15e7)
-        a = self.rho * self.LATENT_HEAT + self.rho * self.CP * self.P
+        a = self.rho * self.LATENT_HEAT + self.rho * self.CP * (self.P - (self.P + self.M * c))
         drdt = (self.SIGMA * self.EMISSIVITY * (self.Ts ** 4 - self.T_EQ ** 4) * self.r_body ** 2 - H) / (a * R ** 2)
         dcdt = c * 3 * drdt * R ** 2 / (self.r_body ** 3 - R ** 3)
         f = np.array([dcdt, drdt])
