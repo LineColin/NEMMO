@@ -6,5 +6,17 @@ The **user_guide.pdf** file provides detailed information on input and output pa
 
 To run the code, ensure you have Python installed on your system. The recommended version is Python 3.6 or higher.
 
+This code was developed as part of a project which resulted in the following publication in which details of the method can be found:
+> *Line Colin, Chloé Michaut, Stéphane Labrosse, Bernard Bourdon,
+Thermal evolution of the lunar magma ocean,
+Earth and Planetary Science Letters,
+Volume 648,
+2024,
+119109,
+ISSN 0012-821X,
+https://doi.org/10.1016/j.epsl.2024.119109.
+(https://www.sciencedirect.com/science/article/pii/S0012821X24005417)*
+
+
 
 
