@@ -167,9 +167,9 @@ class Cumulates(PhysicalBody):
     def dfdt(self, y, t):
         c = y[0]
         R = y[1]
-        H = self.h_lmo * self.V * np.exp(- self.HEAT_DECAY * t / 3.15e7)
-        a = self.rho * self.LATENT_HEAT + self.rho * self.CP * (self.P - (self.P + self.M * c))
-        drdt = (self.SIGMA * self.EMISSIVITY * (self.Ts ** 4 - self.T_EQ ** 4) * self.r_body ** 2 - H) / (a * R ** 2)
+        H = self.h_lmo * np.exp(- self.HEAT_DECAY * t / 3.15e7) * 4 * np.pi * (self.r_body**3 - R**3)/3
+        a = self.rho * self.LATENT_HEAT + self.rho * self.CP * (self.P - (self.P + self.M * self.c0 * (self.r_body**3 -self.r_core**3)/(self.r_body**3 - R**3)))
+        drdt = (self.SIGMA * self.EMISSIVITY * (self.Ts ** 4 - self.T_EQ ** 4) * 4 * np.pi * self.r_body ** 2 - H) / (4 * np.pi * a * R ** 2)
         dcdt = c * 3 * drdt * R ** 2 / (self.r_body ** 3 - R ** 3)
         f = np.array([dcdt, drdt])
         return f
