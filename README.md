@@ -1,4 +1,11 @@
-# Numerical Evolution of the Moon's Magma Ocean
+# Numerical Evolution of the Moon's Magma Ocean (NEMMO)
+
+       o       /`-._
+      o o     /_,.._`:-     
+        o ,.-'  ,   `-:..-')   
+         : o ):';      _  {   
+          `-._ `'__,.-'\`-.)
+              `\\  \,.-'`
 
 This repository contains code for simulating the thermal evolution of the lunar magma ocean. The model is based on solving the heat conservation equation within the magma ocean and can be adapted for studies of other celestial bodies. 
 
