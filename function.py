@@ -7,17 +7,64 @@ Created on Wed Jan 31 16:56:21 2024
 """
 
 import numpy as np
+from scipy.integrate import quad
+from scipy.misc import derivative
 
 
 def euler(dt: float, dr: float, T0: float, T: float, cooling_func: float) -> float:
     """
-    Euler method for temperature evolution
+    Approximates the temperature evolution using the explicit Euler method.
+
+    Advances the temperature T by one time step dt using the cooling function
+    provided. Suitable for slowly varying systems where simplicity is preferred
+    over accuracy.
+
+    Parameters
+    ----------
+    dt : float
+        Time step [s]
+    dr : float
+        Spatial step [m]
+    T0 : float
+        Reference temperature [K]
+    T : float
+        Current temperature [K]
+    cooling_func : callable
+        Function returning the time derivative of temperature dT/dt [K/s]
+
+    Returns
+    -------
+    float
+        Temperature at the next time step [K]
     """
     return T + dt * cooling_func(dr, T0, T)
     
 # =================================
 
 def newton(f, x, T, *args):
+    """
+    Finds the root of f(x, T) using the Newton-Raphson iterative method.
+
+    Used to solve the implicit energy balance equation at the surface, where
+    the surface temperature cannot be expressed analytically. Convergence is
+    reached when |f(x)| < 1e-8 or after 100 iterations.
+
+    Parameters
+    ----------
+    f : callable
+        Function whose root is sought, of the form f(x, T, *args)
+    x : float
+        Initial guess for the root (typically a temperature [K])
+    T : float
+        Current magma ocean temperature [K]
+    *args : 
+        Additional arguments passed to f
+
+    Returns
+    -------
+    float or None
+        Root of f if convergence is achieved, None otherwise
+    """
     h=1.0E-6
     epsilon=1.0E-8
     NbIterationMax = 100
@@ -31,114 +78,79 @@ def newton(f, x, T, *args):
 # =================================
 
 def rk4(dfdt, y, t, dt):
+    """
+    Advances y by one time step using the 4th-order Runge-Kutta method.
+
+    Provides higher accuracy than Euler for the same time step, at the cost
+    of 4 evaluations of dfdt per step. Recommended for stiff or rapidly
+    varying thermal evolution equations.
+
+    Parameters
+    ----------
+    dfdt : callable
+        Function returning dy/dt, of the form dfdt(y, t)
+    y : float or ndarray
+        Current state variable (e.g. temperature [K] and composition c)
+    t : float
+        Current time [s]
+    dt : float
+        Time step [s]
+
+    Returns
+    -------
+    float or ndarray
+        State variable at the next time step
+    """
+
     k1 = dfdt(y, t)
     k2 = dfdt(y + k1 * dt / 2, t + dt / 2)
     k3 = dfdt(y + k2 * dt / 2, t + dt / 2)
     k4 = dfdt(y + k3 * dt / 2, t + dt / 2)
+
     return y + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
 
 # =================================
 
-def calculate_integral(T, radius, coef, R_MO):
-    
-    num_intervals = len(radius)
-    r_values = radius
-
-    # Calcul de la valeur de l'intégrale dans chaque sous-intervalle
-    integral_values = []
-    for i in range(num_intervals - 1):
-        r = r_values[i]
-        dr = r_values[i+1] - r_values[i]
-        integral_value = T[i] * R_MO**2 * dr
-        integral_values.append(integral_value * coef)
-
-    return integral_values
-
-# =================================
-def non_uniform_grid(start, stop, num_points, edge_factor=1/5):
-    # Générer des points uniformément espacés
-    linear_points = np.linspace(start, stop, num_points)
-    
-    # Appliquer une fonction non linéaire pour augmenter le nombre de points aux bords
-    non_linear_points = start + (stop - start) * np.sin(np.linspace(0, np.pi/2, num_points))**edge_factor
-    
-    return non_linear_points
-# =================================
-
-from scipy.integrate import quad
-from scipy.misc import derivative
-
-def calculate_expression(R, R_moon, T):
-    
-    def integrand(r):
-        return T * 4 * np.pi * r**2
-
-    def derivative_func(r):
-        return T * 4 * np.pi * r**2
-
-    integral_result, _ = quad(integrand, R, R_moon)
-    #derivative_result = derivative(integral_result, R)
-
-    return integral_result
-
-# =================================
-
-
-def heat_production_distribution(radius, h0=25e-12, D=1e-3, r_top=1737e3, r_bot=390e3, rho=3.3e3):
-    HPE_0 = h0*D*rho
-    return HPE_0 * ((r_top**3 - r_bot**3)/(r_top**3 - radius**3))**(1-D)
-
-
-# =================================
-
-def non_uniform_grid(start, stop, num_points, edge_factor=1/2):
-    # Générer des points uniformément espacés
-    linear_points = np.linspace(start, stop, num_points)
-    
-    # Appliquer une fonction non linéaire pour augmenter le nombre de points aux bords
-    non_linear_points = start + (stop - start) * np.sin(np.linspace(0, np.pi/2, num_points))**edge_factor
-    
-    return non_linear_points
-    
-# =================================
-
 def diffusion(y, n, dt, K, T_top, T_bot, R_top, R_bot, dy):
 
-    #NOT TESTED
-
     """
-    Construction of the diffusion matrix using finite volume method
+    Builds the implicit diffusion matrix for heat conduction in a spherical shell.
+
+    Discretises the spherical heat equation using a finite volume method on a
+    rescaled coordinate y. Boundary conditions are of Dirichlet type: fixed
+    temperatures T_top and T_bot are imposed at the top and bottom of the shell.
+    Intended for use in the conductive crust or cumulate layers.
 
     Parameters
     ----------
-    y : array(n)
-        rescaling of the radius
+    y : ndarray
+        Rescaled radial coordinate (dimensionless)
     n : int
-        len of array
+        Number of cells
     dt : float
-        time step
-    dy : float
-        space step
+        Time step [s]
     K : float
-        thermal diffusivity
+        Thermal diffusivity [m^2/s]
     T_top : float
-        temperature at the top boundary.
+        Temperature at the upper boundary [K]
     T_bot : float
-        temperature at the bottom.
+        Temperature at the lower boundary [K]
     R_top : float
-        radius at the top.
+        Physical radius at the top of the layer [m]
     R_bot : float
-        radius at the bottom.
+        Physical radius at the bottom of the layer [m]
+    dy : float
+        Rescaled spatial step [-]
 
     Returns
     -------
-    M : array((n,n))
-        matrix for the diffusion problem
-    R : array(n)
-        rest
-    r_center : array(n)
-        dimensional center of the cells
-
+    M : ndarray, shape (n, n)
+        Diffusion matrix
+    rest : ndarray, shape (n,)
+        Boundary condition vector
+    r_center : ndarray, shape (n,)
+        Physical radius at cell centres [m]
+        
     """
 
 
@@ -146,22 +158,14 @@ def diffusion(y, n, dt, K, T_top, T_bot, R_top, R_bot, dy):
 
     L = R_top - R_bot
 
-    # cells boundary
-
-    y_boundary = np.linspace(y[0], y[-1], n+1)#non_uniform_grid(y[0], y[-1], n+1)
+    y_boundary = np.linspace(y[0], y[-1], n+1)
     
     r_boundary = (y_boundary - 1)*(R_top - R_bot) + R_bot
-    #y_boundary = (r_boundary - R_bot)/(R_top - R_bot) + 1
-    
-#    print(dy)
-
-    # cells center
 
     y_center = (y_boundary[:-1] + y_boundary[1:])/2
     
 
     r_center = (y_center - 1)*(R_top - R_bot) + R_bot
-    #dy = np.mean(np.abs(np.diff(r_center)))
 
     s = dt*K / (dy*dy*r_center*r_center * L**2)
 
@@ -186,24 +190,34 @@ def diffusion(y, n, dt, K, T_top, T_bot, R_top, R_bot, dy):
 # =================================
 
 def advection(u, dy, dt):
-    # NOT TESTED
-    
     """
-    Advection matrix using #mettre la méthode
+    Builds the advection matrix for thermal transport in the magma ocean.
+
+    Discretises the advection equation using an upwind scheme to ensure
+    numerical stability. The sign of the velocity field u determines the
+    direction of heat transport at each grid point.
+
     Parameters
     ----------
-    u : array
-        matrix of the advection speed
+    u : ndarray
+        Advection velocity field [m/s]
     dy : float
-        space step
+        Spatial step in rescaled coordinates [-]
     dt : float
-        time step
+        Time step [s]
 
     Returns
     -------
-    A : array((n,n))
-        matrix of advection
+    A : ndarray, shape (n, n)
+        Advection matrix
+    rtop : float
+        Boundary flux contribution at the top
+    rbot : float
+        Boundary flux contribution at the bottom
 
+    Notes
+    -----
+    NOT TESTED
     """
     
     u_abs = np.abs(u)
@@ -215,27 +229,48 @@ def advection(u, dy, dt):
     d_a = f*(u_abs[:-2] - u[:-2])
     
     A = (np.diag(a_a, -1) + np.diag(b_a, 0) + np.diag(c_a, +1) + np.diag(d_a, +2))
-        
-#    A[0,0] = f*3*(u_abs[0] - u[0]) - f*3*(u_abs[0] - u[0])
-#    A[0,1] = f*(5*u[0] - 3*u_abs[0])
-#    A[0,2] = f*(u_abs[0] - u[0])
-#
-#    A[-1,-2] = -f*(u[-1] + u_abs[-1])
-#    A[-1,-1] = f*3*(u_abs[-1] - u[-1]) - f*(5*u[-1] - 3*u_abs[-1])
     A[0, 0] = b_a[0] - a_a[0]
     A[-1, -1] = b_a[-1] - c_a[-1] -  2 * d_a[-1]*np.abs(dy) - d_a[-1]
     
     rtop = a_a[0]
     rbot = c_a[-1] + d_a[-1] * dy
     
-    
-    #M = sparse.csc_matrix(M)
-    
     return A, rtop, rbot
 
 # =================================
 
 def F_plus(gamma, eps, T, u, gN, gN2, flux="normal", B=None):
+    """
+    Computes the upwind numerical flux F+ at each cell interface.
+
+    Evaluates the positive-direction component of the advective flux using
+    a flux limiter gamma to reduce numerical diffusion while preserving
+    monotonicity near sharp gradients (e.g. thermal fronts).
+
+    Parameters
+    ----------
+    gamma : callable
+        Flux limiter function, of the form gamma(eps)
+    eps : ndarray
+        Ratio of consecutive gradients (smoothness indicator) [-]
+    T : ndarray
+        Temperature field [K]
+    u : ndarray
+        Advection velocity [m/s]
+    gN : float
+        Ghost cell temperature at the upper boundary [K]
+    gN2 : float
+        Second ghost cell temperature beyond the upper boundary [K]
+    flux : str, optional
+        Flux scheme selector, default "normal"
+    B : ndarray or None, optional
+        Reserved for alternative flux schemes, default None
+
+    Returns
+    -------
+    ndarray
+        Upwind flux F+ at each grid point [K·m/s]
+    """
     u_abs = np.abs(u)
     Tm = np.zeros_like(T)
     Tp = np.zeros_like(T)
@@ -254,23 +289,40 @@ def F_plus(gamma, eps, T, u, gN, gN2, flux="normal", B=None):
          epsN = (gN - T[-1])/(gN2 - gN)
          Tp[-1] = gN - 0.5 * gamma(epsN) * (gN2 - gN)
          Fp[-1] = 0.5 * u[-1] * (Tp[-1] + Tm[-1]) - 0.5 * u_abs[-1] * (Tp[-1] - Tm[-1])
-#    else:
-#        for i in range(nx - 2):
-#             Tm[i] = T[i] + 0.5 * gamma(eps[i], B[i]) * (T[i+1] - T[i])
-#             Tp[i] = T[i+1] - 0.5 * gamma(eps[i+1], B[i+1]) * (T[i+2] - T[i+1])
-#             Fp[i] = 0.5 * u[i] * (Tp[i] + Tm[i]) - 0.5 * u_abs[i] * (Tp[i] - Tm[i])
-#          Tp[-2] = T[-1] - 0.5 * gamma(eps[-1], B[-1]) * (gN - T[-1])
-#          Tm[-2] =  T[-2] + 0.5 * gamma(eps[-2], B[-2]) * (T[-1] - T[-2])
-#          Fp[-2] = 0.5 * u[-2] * (Tp[-2] + Tm[-2]) - 0.5 * u_abs[-2] * (Tp[-2] - Tm[-2])
-#    
-#         Tm[-1] = T[-1] + 0.5 * gamma(eps[-1], B[-1]) * (gN - T[-1])
-#         epsN = (gN - T[-1])
-#         BN = (gN2 - gN)
-#         Tp[-1] = gN - 0.5 * gamma(epsN, BN) * (gN2 - gN)
-#         Fp[-1] = 0.5 * u[-1] * (Tp[-1] + Tm[-1]) - 0.5 * u_abs[-1] * (Tp[-1] - Tm[-1])
+
     return Fp
 
 def F_minus(gamma, eps, T, u, g0, g1, gN):
+    """
+    Computes the upwind numerical flux F- at each cell interface.
+
+    Evaluates the negative-direction component of the advective flux,
+    symmetric to F_plus. Together, F+ and F- form the complete flux-limiter
+    scheme for advective heat transport.
+
+    Parameters
+    ----------
+    gamma : callable
+        Flux limiter function, of the form gamma(eps)
+    eps : ndarray
+        Ratio of consecutive gradients (smoothness indicator) [-]
+    T : ndarray
+        Temperature field [K]
+    u : ndarray
+        Advection velocity [m/s]
+    g0 : float
+        Ghost cell temperature at the lower boundary [K]
+    g1 : float
+        Second ghost cell temperature beyond the lower boundary [K]
+    gN : float
+        Ghost cell temperature at the upper boundary [K]
+
+    Returns
+    -------
+    ndarray
+        Upwind flux F- at each grid point [K·m/s]
+    """
+    
     u_abs = np.abs(u)
     Tm = np.zeros_like(T)
     Tp = np.zeros_like(T)
