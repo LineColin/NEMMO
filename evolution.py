@@ -29,7 +29,16 @@ import time
 @dataclass
 class Stage1Analysis(Cumulates):
     """
-    Class for the analysis of the first stage of crystallisation
+    First stage of magma ocean crystallisation.
+
+    This class inherits all physical parameters from Cumulates and
+    PhysicalBody. It stores the full temporal history of the system and
+    snapshots of the radial profiles at regular intervals.
+
+    Attributes
+    ----------
+    t : float
+        Current simulation time [s], initialised to 0
     """
     
     t: float = 0
@@ -52,17 +61,68 @@ class Stage1Analysis(Cumulates):
         self.dr_history = [0]
         
     def update_volume(self):
+        """
+        Computes the current volume of the magma ocean.
+
+        Returns
+        -------
+        float
+            Volume of the spherical shell between the cumulate front
+            and the surface [m³]
+        """
         return 4*np.pi*(self.r_body**3 - self.r**3)/3
         
     def update_temperature(self):
+        """
+        Computes the liquidus temperature of the magma ocean at its current
+        anorthite composition.
+
+        Returns
+        -------
+        float
+            Liquidus temperature [K]
+        """
         return self.M * self.c + self.P
         
     def update_heat_producing(self, dr):
+        """
+        Updates the volumetric heat production of the magma ocean after
+        a crystallisation increment.
+
+        Parameters
+        ----------
+        dr : float
+            Thickness of the newly crystallised layer [m]
+
+        Returns
+        -------
+        float
+            Updated volumetric heat production of the magma ocean [W/m^3]
+        """
         dV = 4*np.pi*dr*self.r**2
         phi = dV/self.update_volume()
         return self.h_lmo/(1 - phi + self.D*phi)
 
     def evolve_r(self, time_step):
+        """
+        Advances the system by one time step using the RK4 integrator.
+
+        The sequence of operations is:
+            1. Integrate (c, R) forward in time via RK4
+            2. Update HPE concentrations from the new volume
+            3. Recompute the liquidus temperature from the new composition
+            4. Solve for the new surface temperature via Newton iteration
+
+        Parameters
+        ----------
+        time_step : float
+            Duration of the time step [s]
+
+        Returns
+        -------
+        float
+            Volume of the newly crystallised shell at this time step [m^3]
+        """
         
         R = self.r
         self.V = self.update_volume()
@@ -77,7 +137,6 @@ class Stage1Analysis(Cumulates):
         dV = 4*np.pi*self.dr*self.r**2
         self.dV_history.append(dV)
         self.dr_history.append(self.dr/time_step)
-        #d = self.r - self.r_core
         self.h_lmo = self.update_heat_producing(self.dr)
         self.h = self.D*self.h_lmo
         self.hr_history.append(self.h)
@@ -94,6 +153,27 @@ class Stage1Analysis(Cumulates):
         return dV
         
     def run_stage1_analysis(self, time_step=1e6):
+        """
+        Runs the full Stage 1 simulation until the magma ocean reaches
+        the eutectic temperature.
+
+        Iterates evolve_r() until T <= T_E, accumulating the heat stored
+        in the growing cumulates at each step. Radial temperature
+        profiles are saved at regular intervals (every 50 steps) for
+        post-processing and visualisation.
+
+        Parameters
+        ----------
+        time_step : float, optional
+            Duration of each time step [s], default 1e6 s.
+
+        Notes
+        -----
+        Profile snapshots are stored in self.profilT and self.profilr as
+        non-dimensional profiles (normalised by the current cumulate thickness
+        and temperature range) to allow direct comparison across time steps.
+        """
+
         a = 0
         i = 0
         T0 = self.T
@@ -112,36 +192,85 @@ class Stage1Analysis(Cumulates):
             i += 1
 
     def get_time_history(self):
+        """
+        Return the time array of the simulation [s].
+        """
         return np.array(self.time_history)
     
     def get_r_history(self):
+        """
+        Return the temporal evolution of the cumulates front radius [m].
+        """
         return np.array(self.r_history)
     
     def get_T_history(self):
+        """
+        Returns the temporal evolution of the magma ocean temperature [K].
+        """
         return np.array(self.T_history)
     
     def get_Ts_history(self):
+        """
+        Returns the temporal evolution of the surface temperature [K].
+        """
         return np.array(self.Ts_history)
     
     def get_hr_history(self):
+        """
+        Returns the radial distribution of the HPE concentration in the cumulates [W/m^3].
+        """
         return np.array(self.hr_history)
     
     def get_h_solid_history(self):
+        """
+        Returns the temporal evolution of the HPE concentration in the cumulates [W/m^3].
+        """
         return np.array(self.h_solid_history)
     
     def get_h_lmo_history(self):
+        """
+        Returns the temporal evolution of the HPE concentration in the magma ocean [W/m^3].
+        """
         return np.array(self.h_lmo_history)
     
     def get_dV_history(self):
+        """
+        Returns the crystallized volume at each time step [m^3].
+        """
         return np.array(self.dV_history)
     
     def get_T_profil(self):
+        """
+        Returns the non-dimensional radial temperature profiles saved during
+        the simulation.
+        """
         return np.array(self.profilT)
     
 @dataclass
 class Stage2Analysis(PhysicalBody):
     """
-    Class for the analysis of the second stage
+    Second stage of magma ocean crystallisation.
+
+    Parameters
+    ----------
+    n : int
+        Number of grid cells in the crust, default 100
+    cfl : float
+        CFL number for adaptive time stepping [-], default 0.4
+    t : float or None
+        Current simulation time [s], set at initialisation from Stage 1
+    h_lmo : float or None
+        Volumetric heat production of the magma ocean [W/m^3]
+    dt : float or None
+        Current time step [s], set adaptively during the simulation
+    Qmax : float
+        Initial overturn heat flux [W], default 0
+    decay : float
+        Exponential decay constant of the overturn flux [s^-1], default 0
+    Q : float
+        Total heat stored in the cumulates at the time of overturn [J]
+    t0 : float
+        Time at the start of Stage 2 [s]
     """
     
     n: int = 100
@@ -194,9 +323,32 @@ class Stage2Analysis(PhysicalBody):
     
     
     def T_analytique(self):
+        """
+        Returns the analytical liquidus temperature profile of the magma ocean
+        as a function of radius.
+
+        Returns
+        -------
+        callable
+            Function T(r) -> liquidus temperature [K] at radius r [m]
+        """
         return lambda x: self.P + self.M*(self.c0*(self.r_body**3 - self.r_core**3)/(self.r_body**3 - x**3))
         
     def initialisation(self, time_step=1e6):
+        """
+        Runs Stage 1 and sets the initial conditions for Stage 2.
+
+        Executes the full Stage 1 simulation, then uses its final state
+        (cumulate radius, surface temperature, HPE distribution) to
+        initialise the crust, cumulates, and core objects for Stage 2.
+        Also constructs the initial non-dimensional temperature profiles
+        in both solid layers by interpolating the Stage 1 output.
+
+        Parameters
+        ----------
+        time_step : float, optional
+            Time step used for the Stage 1 integration [s], default 1e6 s
+        """
         
         print("start stage#1")
         self.stage1.run_stage1_analysis(time_step)
@@ -262,6 +414,18 @@ class Stage2Analysis(PhysicalBody):
         
     
     def update_time(self):
+        """
+        Computes the adaptive time step satisfying the CFL stability condition.
+
+        The time step is constrained by three criteria evaluated simultaneously:
+        the diffusive stability of the crust, the advective displacement of
+        the crust boundary, and the advective displacement of the cumulate
+        boundary. The most restrictive criterion is selected.
+
+        If overturn is None, all three criteria are applied. Otherwise, only
+        the two crust-related criteria are used, since the cumulate boundary
+        is then decoupled from the magma ocean energy balance.
+        """
         
         dt1 = self.cfl*self.crust.dr**2 /self.crust.K
         dt2 = self.cfl*self.crust.dr/np.abs(self.crust.dr_dt)
@@ -273,6 +437,20 @@ class Stage2Analysis(PhysicalBody):
             self.dt = min([dt1, dt2])
     
     def update_radius(self, V_lmo):
+        """
+        Computes the growth rates of the crust and cumulates from the
+        energy balance.
+
+        The crust grows inward and the cumulates grow outward.
+
+        The cumulate growth rate follows from mass conservation of the
+        anorthosite fraction.
+
+        Parameters
+        ----------
+        V_lmo : float
+            Current volume of the residual magma ocean [m^3]
+        """
         
         a =  self.crust.k*self.crust.dT * 2 * (1 - self.crust.T_[-1]) /(self.crust.dr)
         
@@ -293,19 +471,58 @@ class Stage2Analysis(PhysicalBody):
         self.solid.dr_dt = self.crust.dr_dt * d * self.crust.r**2 / self.solid.r**2
     
     def update_dy(self):
-            r_crust = np.linspace(self.r_body, self.crust.r, self.n+1)
-            r_crust = (r_crust[1:] + r_crust[:-1])/2
-            self.crust.y = (r_crust - self.crust.r)/(self.r_body - self.crust.r) + 1
-            r_solid = np.linspace(self.r_core, self.solid.r, self.n_factor*self.n+1)
-            r_solid = (r_solid[1:] + r_solid[:-1])/2
-            self.solid.y = (r_solid - self.r_core)/(self.solid.r - self.r_core) + 1
-            
-            self.crust.dr = (self.r_body - self.crust.r)/self.n
-            self.solid.dr = (self.solid.r - self.r_core)/(self.n_factor*self.n)
-            
-            return -1/self.n, 1/(self.n_factor*self.n)
+        """
+        Recomputes the spatial grids and rescaled coordinates of both layers
+        after their boundaries have moved.
+
+        Updates the cell-centred radial positions and the non-dimensional
+        coordinate y for the crust and cumulates, then recomputes the
+        cell spacing dr in both layers.
+
+        Returns
+        -------
+        dy_crust : float
+            Rescaled spatial step in the crust [-]
+        dy_solid : float
+            Rescaled spatial step in the cumulates [-]
+        """
+
+        r_crust = np.linspace(self.r_body, self.crust.r, self.n+1)
+        r_crust = (r_crust[1:] + r_crust[:-1])/2
+        self.crust.y = (r_crust - self.crust.r)/(self.r_body - self.crust.r) + 1
+        r_solid = np.linspace(self.r_core, self.solid.r, self.n_factor*self.n+1)
+        r_solid = (r_solid[1:] + r_solid[:-1])/2
+        self.solid.y = (r_solid - self.r_core)/(self.solid.r - self.r_core) + 1
+        
+        self.crust.dr = (self.r_body - self.crust.r)/self.n
+        self.solid.dr = (self.solid.r - self.r_core)/(self.n_factor*self.n)
+        
+        return -1/self.n, 1/(self.n_factor*self.n)
         
     def run_stage2_analysis(self):
+        """
+        Runs the full Stage 2 simulation until the magma ocean is solidified.
+
+        The simulation advances until either the gap between the crust base
+        and the cumulate top falls below 500 m, or the elapsed time exceeds
+        500 Myr. At each time step, the following operations are performed
+        in sequence:
+
+        1. Update the surface temperature via Newton iteration
+        2. Compute the adaptive time step (CFL condition)
+        3. Update the growth rates of the crust and cumulates
+        4. Advect the HPE distribution in both solid layers
+        5. Solve the coupled advection–diffusion equation for temperature
+           in the crust and cumulates (operator-splitting, implicit diffusion)
+        6. Update the core temperature via the Euler method
+        7. Recompute the HPE concentration in the magma ocean
+
+        If overturn is enabled, the overturn decay constant and initial flux
+        are computed once, after 0.1 Myr of Stage 2, from the heat stored
+        in the cumulates and the current latent heat release rate.
+
+        Output histories are saved every 100 time steps.
+        """
         
         print("start analysis")
         debut = time.time()
@@ -509,6 +726,20 @@ class Stage2Analysis(PhysicalBody):
 
         
     def get_name(self):
+        """
+        Generates a descriptive filename string summarising the key parameters
+        of the simulation.
+
+        Encodes the final crust thickness, thermal conductivity, eutectic
+        composition, overturn configuration, magma ocean depth, and initial
+        heat production into a human-readable filename, suitable for saving
+        output files.
+
+        Returns
+        -------
+        str
+            Formatted filename string (without extension)
+        """
         th_crust = (self.r_body - pow(self.r_body**3 - self.c0 * (self.r_body**3 - self.r_core**3), 1/3))/1e3
         th_crust = format(th_crust, '.0f')
         kc_print = format(self.k_crust, '.1f')
@@ -528,32 +759,145 @@ class Stage2Analysis(PhysicalBody):
         return save_name
 
     def get_time_history(self):
+        """
+        Return the time of Stage 2 simulation.
+        """
         return np.array(self.t_history)
         
     def get_radius_history(self):
+        """
+        Return the temporal evolution of the crust and cumulates radius.
+
+        Returns
+        -------
+        r_crust : ndarray
+            Radius of the base of the crust at each saved time step [m]
+        r_solid : ndarray
+            Radius of the top of the cumulate pile at each saved time step [m]
+        """
         return np.array(self.r_crust_history), np.array(self.r_solid_history)
         
     def get_temp_history(self):
+        """
+        Return the temporal evolution of the surface and core temperatures.
+
+        Returns
+        -------
+        Ts : ndarray
+            Surface temperature at each saved time step [K]
+        T_core : ndarray
+            Core temperature at each saved time step [K]
+        """
         return np.array(self.Ts_history), np.array(self.T_core_history)
         
     def get_h_history(self):
+        """
+        Returns the temporal evolution of the volumetric heat production
+        in each reservoir.
+
+        Returns
+        -------
+        h_lmo : ndarray
+            Heat production of the residual magma ocean [W/m^3]
+        h_crust : ndarray
+            Heat production of the crust [W/m^3]
+        h_solid : ndarray
+            Heat production of the cumulates [W/m^3]
+        """
         return np.array(self.h_lmo_history), np.array(self.h_crust_history), np.array(self.h_solid_history)
         
     def get_drdt_history(self):
+        """
+        Returns the temporal evolution of the growth rates of both fronts.
+
+        Returns
+        -------
+        drdt_crust : ndarray
+            Growth rate of the crust base [m/s]
+        drdt_solid : ndarray
+            Growth rate of the cumulate top [m/s]
+        """
         return np.array(self.drdt_crust_history), np.array(self.drdt_solid_history)
     
     def get_flux_history(self):
+        """
+        Returns the temporal evolution of the heat fluxes in the system.
+
+        Returns
+        -------
+        flux_crust : ndarray
+            Conductive heat flux through the crust [W]
+        flux_solid : ndarray
+            Conductive heat flux through the cumulates [W]
+        flux_hlmo : ndarray
+            Radiogenic heat production of the magma ocean [W]
+        flux_lat : ndarray
+            Latent heat release rate at both solidification fronts [W]
+        flux_overturn : ndarray
+            Heat flux from the cumulate overturn [W]
+        """
+
         return np.array(self.flux_crust), np.array(self.flux_solid), np.array(self.flux_hlmo), np.array(self.flux_lat), np.array(self.flux_overturn)
     
     def get_crust_profil(self):
+        """
+        Returns the radial profiles of temperature and HPE in the crust,
+        saved every 100 time steps.
+
+        Returns
+        -------
+        r : list of ndarray
+            Radial positions of cell centres [m]
+        T : list of ndarray
+            Non-dimensional temperature profile [-]
+        hr : list of ndarray
+            Volumetric heat production profile [W/m^3]
+        """
         return self.r_profil_crust, self.T_profil_crust, self.hr_profil_crust
     
     def get_solid_profil(self):
+        """
+        Returns the radial profiles of temperature and HPE in the cumulates,
+        saved every 100 time steps.
+
+        Returns
+        -------
+        r : list of ndarray
+            Radial positions of cell centres [m]
+        T : list of ndarray
+            Non-dimensional temperature profile [-]
+        hr : list of ndarray
+            Volumetric heat production profile [W/m³]
+        """
         return self.r_profil_solid, self.T_profil_solid, self.hr_profil_solid
     
     def get_boundary_temp(self):
+        """
+        Returns the temporal evolution of the non-dimensional temperatures
+        at the interface between the magma ocean and both solid layers.
+
+        Returns
+        -------
+        Tbot_crust : ndarray
+            Non-dimensional temperature at the base of the crust [-]
+        Ttop_solid : ndarray
+            Non-dimensional temperature at the top of the cumulates [-]
+        """
         return np.array(self.Tbot_crust), np.array(self.Ttop_solid)
     
     def get_overturn_constant(self):
+        """
+        Returns the three constants characterising the exponential overturn
+        heat flux, computed once during the simulation.
+
+        Returns
+        -------
+        Q : float
+            Total heat stored in the cumulates at the time of overturn [J]
+        Qmax : floata
+            Initial overturn heat flux [W]
+        decay_Myr : float
+            Characteristic decay timescale of the overturn flux [Myr]
+        """
         return self.Q, self.Qmax, 1/self.decay/3.15e13
             
